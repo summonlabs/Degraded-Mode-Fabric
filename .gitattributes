@@ -1,0 +1,17 @@
+# Degraded Mode Fabric - line ending policy.
+#
+# Copyright 2026 Summon Software Labs.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Text is stored with LF in the repository and checked out with the platform
+# default, so a fresh clone on any host produces the same bytes the tag records.
+* text=auto
+*.hpp text
+*.cpp text
+*.md text
+*.txt text
+*.cmake text
+*.ps1 text
+*.yml text
+CMakeLists.txt text
+LICENSE text

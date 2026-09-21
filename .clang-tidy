@@ -1,0 +1,28 @@
+# Degraded Mode Fabric - static analysis configuration.
+#
+# Copyright 2026 Summon Software Labs.
+# SPDX-License-Identifier: Apache-2.0
+#
+# No third-party configuration is vendored and no check is enabled that the
+# project does not act on.
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  portability-*,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-branch-clone
+
+# clang-analyzer-optin.core.EnumCastOutOfRange is disabled because AuthorityDelta
+# is a bit-flag enum: every legitimate combination of its flags is a value the
+# enumerator list does not contain, and the analyser reports each one.
+#
+# bugprone-easily-swappable-parameters is disabled because the domain model uses
+# strongly typed identities precisely so that positional confusion is a compile
+# error, and the remaining same-typed pairs are ordered pairs whose meaning is
+# carried by the parameter name.
+#
+# bugprone-branch-clone is disabled because several decoders legitimately share
+# an identical body across record kinds.
