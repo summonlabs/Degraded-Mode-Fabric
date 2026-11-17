@@ -328,8 +328,15 @@ Result<Listener> Listener::bind_loopback(std::uint16_t port, int backlog) {
   native_socket socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (socket == kInvalidSocket) return socket_error("socket");
   int reuse = 1;
+#ifdef _WIN32
+  // SO_REUSEADDR on Windows lets a second socket bind a port that is still
+  // listening; exclusive use makes that second bind fail instead.
+  ::setsockopt(socket, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&reuse),
+               static_cast<int>(sizeof(reuse)));
+#else
   ::setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse),
                static_cast<int>(sizeof(reuse)));
+#endif
   sockaddr_in address{};
   address.sin_family = AF_INET;
   address.sin_port = htons(port);

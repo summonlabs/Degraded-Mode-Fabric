@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "dmf/net.hpp"
 #include "testkit/fixtures.hpp"
 #include "testkit/testkit.hpp"
 
@@ -402,4 +403,13 @@ DMF_TEST(integration, the_same_scope_reallocates_identically_after_a_restart) {
     (void)first_digest;
     DMF_CHECK_OK(coordinator->stop());
   }
+}
+
+DMF_TEST(integration, a_second_listener_cannot_take_a_listening_port) {
+  auto first = Listener::bind_loopback(0);
+  DMF_CHECK(first.ok());
+  if (!first.ok()) return;
+  auto second = Listener::bind_loopback(first.value().port());
+  // Two coordinators must never share one listening port: the second bind fails.
+  DMF_CHECK(!second.ok());
 }

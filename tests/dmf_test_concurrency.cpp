@@ -15,6 +15,16 @@
 #include "testkit/fixtures.hpp"
 #include "testkit/testkit.hpp"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 using namespace dmf;
 using namespace dmf::test;
 
@@ -232,4 +242,45 @@ DMF_TEST(concurrency, a_client_can_be_closed_while_the_server_is_stopping) {
   stopping.join();
   closing.join();
   DMF_CHECK_OK(coordinator->stop());
+}
+
+DMF_TEST(concurrency, finished_sessions_release_their_threads) {
+#if defined(_WIN32)
+  TempDir directory{"finished-sessions"};
+  CoordinatorConfig config;
+  config.store.root = directory.path();
+  config.allow_anonymous_sessions = true;
+  auto created = Coordinator::create(config);
+  DMF_CHECK(created.ok());
+  std::unique_ptr<Coordinator> coordinator = std::move(created.value());
+  DMF_CHECK_OK(coordinator->start());
+  const auto session = [&coordinator](std::uint64_t index) {
+    Client client;
+    ClientConfig client_config;
+    client_config.port = coordinator->port();
+    client_config.process = ProcessId::from_value(index);
+    client_config.boot = BootIncarnation::from_value(1);
+    client_config.principal = PrincipalId::from_value(index);
+    bool ok = client.connect(client_config).ok();
+    HelloResponse hello;
+    ok = ok && client.handshake(hello).ok();
+    const Status closed = client.close();
+    (void)closed;
+    return ok;
+  };
+  DMF_CHECK(session(1));
+  DWORD before = 0;
+  ::GetProcessHandleCount(::GetCurrentProcess(), &before);
+  int served = 0;
+  for (std::uint64_t index = 2; index <= 101; ++index) {
+    if (session(index)) ++served;
+  }
+  DWORD after = 0;
+  ::GetProcessHandleCount(::GetCurrentProcess(), &after);
+  DMF_CHECK_OK(coordinator->stop());
+  DMF_CHECK_EQ(served, 100);
+  // A finished session's thread that is never joined keeps its handle, so the
+  // count would grow by about one per session.
+  DMF_CHECK(after < before + 64);
+#endif
 }

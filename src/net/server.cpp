@@ -23,6 +23,8 @@ struct SessionState {
   Socket socket{};
   std::thread thread{};
   HelloRequest hello{};
+  // Set by the session thread as its last step, so the accept loop can join it.
+  std::atomic<bool> finished{false};
 };
 
 struct Server::Impl {
@@ -206,6 +208,7 @@ void session_loop(Server::Impl& impl, const std::shared_ptr<SessionState>& state
   if (impl.accounting != nullptr) (void)impl.accounting->record_session_closed();
   impl.handler->on_session_closed(state->id);
   impl.active_sessions.fetch_sub(1);
+  state->finished.store(true);
 }
 
 void accept_loop(Server::Impl& impl) {
@@ -237,13 +240,31 @@ void accept_loop(Server::Impl& impl) {
     }
     impl.active_sessions.fetch_add(1);
     if (impl.accounting != nullptr) (void)impl.accounting->record_session_opened();
+    std::vector<std::shared_ptr<SessionState>> finished;
     {
-      // The state is registered before its thread exists, so shutdown can never
-      // miss a live session.
+      // The state is registered and its thread stored under one lock. Shutdown
+      // drains the sessions under the same lock; storing the thread after the
+      // lock let it drain a session whose thread was already running but not
+      // yet stored, skip joining it, and leave that thread running after the
+      // server was gone.
       const std::lock_guard<std::mutex> guard(impl.mutex);
+      // A finished session was kept, with its thread, until shutdown, so a
+      // long-running server held one thread for every session it had ever
+      // served. Finished sessions are dropped here and joined below.
+      for (auto it = impl.sessions.begin(); it != impl.sessions.end();) {
+        if ((*it)->finished.load()) {
+          finished.push_back(std::move(*it));
+          it = impl.sessions.erase(it);
+        } else {
+          ++it;
+        }
+      }
       impl.sessions.push_back(state);
+      state->thread = std::thread([&impl, state]() { session_loop(impl, state); });
     }
-    state->thread = std::thread([&impl, state]() { session_loop(impl, state); });
+    for (const std::shared_ptr<SessionState>& done : finished) {
+      if (done->thread.joinable()) done->thread.join();
+    }
   }
 }
 
